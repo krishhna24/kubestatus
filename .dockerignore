@@ -1,0 +1,5 @@
+.git
+.github
+kubestatus
+*.kubeconfig
+kubeconfig
