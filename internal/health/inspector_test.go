@@ -207,6 +207,17 @@ func TestDiagnosePod(t *testing.T) {
 		{Name: "migrate", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Completed"}}},
 	}
 
+	// Ready right now, but crashed before: typical of a crash loop in a
+	// container that has no readiness probe.
+	flapping := running("app", true)
+	flapping.RestartCount = 3
+	flapping.LastTerminationState.Terminated = &corev1.ContainerStateTerminated{Reason: "Error", ExitCode: 1}
+
+	// A clean previous exit (exit code 0) is not treated as a failure.
+	cleanRestart := running("app", true)
+	cleanRestart.RestartCount = 1
+	cleanRestart.LastTerminationState.Terminated = &corev1.ContainerStateTerminated{Reason: "Completed", ExitCode: 0}
+
 	terminating := pod(corev1.PodRunning, running("app", true))
 	terminating.DeletionTimestamp = &metav1.Time{}
 
@@ -233,6 +244,8 @@ func TestDiagnosePod(t *testing.T) {
 		{"one container status missing", partialStatuses, "Running", 1, 2, false, `"sidecar": no status reported`},
 		{"init container crash", initCrash, "Init:CrashLoopBackOff", 0, 1, false, `init container "migrate" waiting: CrashLoopBackOff`},
 		{"completed init container is fine", initDone, "Running", 1, 1, true, ""},
+		{"ready but restarted after failure", pod(corev1.PodRunning, flapping), "Running", 1, 1, false, `"app" restarted 3 time(s); last terminated: Error (exit code 1)`},
+		{"ready after clean restart", pod(corev1.PodRunning, cleanRestart), "Running", 1, 1, true, ""},
 		{"terminating", terminating, "Terminating", 1, 1, false, ""},
 		{"empty phase", &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "x"}}, "Unknown", 0, 0, false, "no container status reported yet"},
 	}

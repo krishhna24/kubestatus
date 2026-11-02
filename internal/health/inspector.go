@@ -169,7 +169,8 @@ type PodDiagnosis struct {
 	Restarts        int32
 	// Problems are detailed, per-container explanations.
 	Problems []string
-	// Healthy is true when the Pod is Running with every container ready.
+	// Healthy is true when the Pod is Running with every container ready and
+	// no ready container has previously exited with a failure.
 	Healthy bool
 }
 
@@ -234,6 +235,7 @@ func DiagnosePod(p *corev1.Pod) PodDiagnosis {
 		d.Problems = append(d.Problems, "no container status reported yet")
 	}
 
+	restartedAfterFailure := false
 	for _, c := range p.Spec.Containers {
 		cs, ok := statuses[c.Name]
 		if !ok {
@@ -245,6 +247,13 @@ func DiagnosePod(p *corev1.Pod) PodDiagnosis {
 		d.Restarts += cs.RestartCount
 		if cs.Ready {
 			d.ReadyContainers++
+			// A container without a readiness probe is "ready" whenever it
+			// is running, even if it crashes every few seconds. A previous
+			// failed exit is the only trace of that, so surface it.
+			if t := cs.LastTerminationState.Terminated; t != nil && t.ExitCode != 0 && cs.RestartCount > 0 {
+				restartedAfterFailure = true
+				d.Problems = append(d.Problems, fmt.Sprintf("container %q restarted %d time(s)%s", cs.Name, cs.RestartCount, lastTermination(cs)))
+			}
 			continue
 		}
 		r, problem := containerProblem(cs)
@@ -258,6 +267,7 @@ func DiagnosePod(p *corev1.Pod) PodDiagnosis {
 
 	d.Healthy = p.Status.Phase == corev1.PodRunning &&
 		p.DeletionTimestamp == nil &&
+		!restartedAfterFailure &&
 		d.TotalContainers > 0 &&
 		d.ReadyContainers == d.TotalContainers
 
