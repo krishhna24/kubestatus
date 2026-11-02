@@ -1,0 +1,145 @@
+# Demo workloads covering each health state kubestatus reports.
+# Intended for a disposable local cluster (for example kind):
+#
+#   kubectl apply -f deploy/examples/demo.yaml
+#   kubestatus -n kubestatus-demo
+#   kubectl delete namespace kubestatus-demo
+#
+# Expected (on a single-node cluster, once images are pulled):
+#   healthy-web    HEALTHY    2/2 ready
+#   scaled-zero    HEALTHY    0 replicas desired
+#   spread         DEGRADED   1/2 ready, 2nd Pod Pending (anti-affinity)
+#   bad-image      UNHEALTHY  ImagePullBackOff / ErrImagePull
+#   crashloop      UNHEALTHY  CrashLoopBackOff, last exit code 1
+#   never-ready    UNHEALTHY  Running but readiness probe failing
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubestatus-demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: healthy-web
+  namespace: kubestatus-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: healthy-web}
+  template:
+    metadata:
+      labels: {app: healthy-web}
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports: [{containerPort: 80}]
+          readinessProbe:
+            httpGet: {path: /, port: 80}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scaled-zero
+  namespace: kubestatus-demo
+spec:
+  replicas: 0
+  selector:
+    matchLabels: {app: scaled-zero}
+  template:
+    metadata:
+      labels: {app: scaled-zero}
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+---
+# Two replicas that may not share a node: on a single-node cluster one Pod
+# runs and the other stays Pending as Unschedulable.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spread
+  namespace: kubestatus-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: spread}
+  template:
+    metadata:
+      labels: {app: spread}
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: {app: spread}
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-image
+  namespace: kubestatus-demo
+spec:
+  replicas: 1
+  # Short deadline so the Progressing=False condition appears quickly.
+  progressDeadlineSeconds: 30
+  selector:
+    matchLabels: {app: bad-image}
+  template:
+    metadata:
+      labels: {app: bad-image}
+    spec:
+      containers:
+        - name: app
+          image: nginx:0.0.0-does-not-exist
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crashloop
+  namespace: kubestatus-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: crashloop}
+  template:
+    metadata:
+      labels: {app: crashloop}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c", "echo starting; exit 1"]
+          resources:
+            requests: {cpu: 10m, memory: 8Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: never-ready
+  namespace: kubestatus-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: never-ready}
+  template:
+    metadata:
+      labels: {app: never-ready}
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          readinessProbe:
+            httpGet: {path: /does-not-exist, port: 80}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
