@@ -49,6 +49,36 @@ type DeploymentHealth struct {
 	Pods []PodDiagnosis
 }
 
+// Report is the result of inspecting one namespace.
+type Report struct {
+	Namespace   string
+	Deployments []DeploymentHealth
+	// PodsErr is set when Pods could not be listed. Deployment health is
+	// still valid in that case because it comes from Deployment status.
+	PodsErr error
+}
+
+// Summary counts Deployments by status.
+type Summary struct {
+	Total, Healthy, Degraded, Unhealthy int
+}
+
+// Summary tallies the Deployments in the report.
+func (r Report) Summary() Summary {
+	s := Summary{Total: len(r.Deployments)}
+	for _, d := range r.Deployments {
+		switch d.Status {
+		case Healthy:
+			s.Healthy++
+		case Degraded:
+			s.Degraded++
+		case Unhealthy:
+			s.Unhealthy++
+		}
+	}
+	return s
+}
+
 // DesiredReplicas returns spec.replicas, applying the API default of 1 when
 // the field is unset.
 func DesiredReplicas(d *appsv1.Deployment) int32 {
