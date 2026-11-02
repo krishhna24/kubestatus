@@ -1,0 +1,18 @@
+# Build output
+/kubestatus
+/bin/
+/dist/
+*.test
+*.out
+coverage.*
+
+# Never commit cluster credentials
+kubeconfig
+*.kubeconfig
+.kube/
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
