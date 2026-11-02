@@ -56,9 +56,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&allPods, "all-pods", false, "show every Pod, including those of healthy Deployments")
 	fs.BoolVar(&showVersion, "version", false, "print the version and exit")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: kubestatus [flags]\n\nInspect Deployment and Pod health in a Kubernetes namespace.\n\nFlags:\n")
+		_, _ = fmt.Fprintf(fs.Output(), "Usage: kubestatus [flags]\n\nInspect Deployment and Pod health in a Kubernetes namespace.\n\nFlags:\n")
 		fs.PrintDefaults()
-		fmt.Fprintf(fs.Output(), "\nExit codes: 0 all healthy, 1 degraded or unhealthy Deployments found, 2 error.\n")
+		_, _ = fmt.Fprintf(fs.Output(), "\nExit codes: 0 all healthy, 1 degraded or unhealthy Deployments found, 2 error.\n")
 	}
 
 	if err := fs.Parse(args); err != nil {
@@ -68,22 +68,22 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "kubestatus: unexpected arguments: %v\n", fs.Args())
+		_, _ = fmt.Fprintf(stderr, "kubestatus: unexpected arguments: %v\n", fs.Args())
 		fs.Usage()
 		return exitError
 	}
 	if showVersion {
-		fmt.Fprintf(stdout, "kubestatus %s\n", version)
+		_, _ = fmt.Fprintf(stdout, "kubestatus %s\n", version)
 		return exitHealthy
 	}
 	if timeout <= 0 {
-		fmt.Fprintln(stderr, "kubestatus: --timeout must be positive")
+		_, _ = fmt.Fprintln(stderr, "kubestatus: --timeout must be positive")
 		return exitError
 	}
 
 	cs, contextNS, err := kube.NewClient(kube.Options{Kubeconfig: kubeconfig, Context: kubeContext, Timeout: timeout})
 	if err != nil {
-		fmt.Fprintf(stderr, "kubestatus: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "kubestatus: %v\n", err)
 		return exitError
 	}
 	if namespace == "" {
@@ -97,12 +97,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	r, err := kube.Inspect(ctx, cs, namespace)
 	if err != nil {
-		fmt.Fprintf(stderr, "kubestatus: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "kubestatus: %v\n", err)
 		return exitError
 	}
 
 	if err := report.Write(stdout, r, report.Options{AllPods: allPods}); err != nil {
-		fmt.Fprintf(stderr, "kubestatus: writing report: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "kubestatus: writing report: %v\n", err)
 		return exitError
 	}
 	return exitCode(r)

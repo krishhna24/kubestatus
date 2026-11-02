@@ -35,12 +35,12 @@ func Write(w io.Writer, r health.Report, opts Options) error {
 }
 
 func writeDeployments(ew *errWriter, r health.Report) {
-	tw := tabwriter.NewWriter(ew, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(tw, "DEPLOYMENT\tREADY\tAVAILABLE\tUP-TO-DATE\tSTATUS")
-	for _, d := range r.Deployments {
-		fmt.Fprintf(tw, "%s\t%d/%d\t%d\t%d\t%s\n", d.Name, d.Ready, d.Desired, d.Available, d.Updated, d.Status)
-	}
-	ew.check(tw.Flush())
+	table(ew, 3, func(t *errWriter) {
+		t.printf("DEPLOYMENT\tREADY\tAVAILABLE\tUP-TO-DATE\tSTATUS\n")
+		for _, d := range r.Deployments {
+			t.printf("%s\t%d/%d\t%d\t%d\t%s\n", d.Name, d.Ready, d.Desired, d.Available, d.Updated, d.Status)
+		}
+	})
 }
 
 // writeIssues prints Deployment-level issues and notes. They are kept out of
@@ -90,12 +90,12 @@ func writePods(ew *errWriter, r health.Report, opts Options) {
 			continue
 		}
 
-		tw := tabwriter.NewWriter(ew, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(tw, "  POD\tPHASE\tREADY\tRESTARTS\tREASON")
-		for _, p := range pods {
-			fmt.Fprintf(tw, "  %s\t%s\t%d/%d\t%d\t%s\n", p.Name, phase(p), p.ReadyContainers, p.TotalContainers, p.Restarts, p.Reason)
-		}
-		ew.check(tw.Flush())
+		table(ew, 3, func(t *errWriter) {
+			t.printf("  POD\tPHASE\tREADY\tRESTARTS\tREASON\n")
+			for _, p := range pods {
+				t.printf("  %s\t%s\t%d/%d\t%d\t%s\n", p.Name, phase(p), p.ReadyContainers, p.TotalContainers, p.Restarts, p.Reason)
+			}
+		})
 
 		for _, p := range pods {
 			for _, problem := range p.Problems {
@@ -127,11 +127,21 @@ func phase(p health.PodDiagnosis) string {
 
 func writeSummary(ew *errWriter, s health.Summary) {
 	ew.printf("\nSUMMARY\n")
-	tw := tabwriter.NewWriter(ew, 0, 0, 1, ' ', 0)
-	fmt.Fprintf(tw, "Deployments:\t%d\n", s.Total)
-	fmt.Fprintf(tw, "Healthy:\t%d\n", s.Healthy)
-	fmt.Fprintf(tw, "Degraded:\t%d\n", s.Degraded)
-	fmt.Fprintf(tw, "Unhealthy:\t%d\n", s.Unhealthy)
+	table(ew, 1, func(t *errWriter) {
+		t.printf("Deployments:\t%d\n", s.Total)
+		t.printf("Healthy:\t%d\n", s.Healthy)
+		t.printf("Degraded:\t%d\n", s.Degraded)
+		t.printf("Unhealthy:\t%d\n", s.Unhealthy)
+	})
+}
+
+// table renders tab-separated rows as aligned columns. Errors from both the
+// tabwriter and the underlying writer are recorded on ew.
+func table(ew *errWriter, padding int, rows func(t *errWriter)) {
+	tw := tabwriter.NewWriter(ew, 0, 0, padding, ' ', 0)
+	t := &errWriter{w: tw}
+	rows(t)
+	ew.check(t.err)
 	ew.check(tw.Flush())
 }
 
@@ -151,8 +161,10 @@ func (e *errWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// printf writes formatted output. Its error is deliberately discarded here
+// because e.Write has already recorded it in e.err.
 func (e *errWriter) printf(format string, args ...any) {
-	fmt.Fprintf(e, format, args...)
+	_, _ = fmt.Fprintf(e, format, args...)
 }
 
 func (e *errWriter) check(err error) {
