@@ -106,6 +106,35 @@ default). `ready`, `available` and `up-to-date` come from the Deployment's
 | `DEGRADED`  | `ready > 0`, but the rule above is not met                                      |
 | `UNHEALTHY` | `desired > 0` and `ready == 0`                                                  |
 
+```mermaid
+flowchart TD
+    start(["Deployment"]) --> zero{{"desired == 0 ?"}}
+    zero -- yes --> H1["HEALTHY<br/><i>scaled to zero</i>"]
+    zero -- no --> full{{"ready ≥ desired and<br/>available ≥ desired ?"}}
+    full -- yes --> cond{{"Progressing=False or<br/>ReplicaFailure=True ?"}}
+    cond -- no --> H2["HEALTHY"]
+    cond -- yes --> D
+    full -- no --> some{{"ready > 0 ?"}}
+    some -- yes --> D["DEGRADED"]
+    some -- no --> U["UNHEALTHY"]
+
+    H1 & H2 -.-> E0(["exit 0 if all healthy"])
+    D & U -.-> E1(["exit 1"])
+
+    classDef healthy fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d
+    classDef degraded fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#713f12
+    classDef unhealthy fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
+    classDef decision fill:#f1f5f9,stroke:#64748b,color:#1e293b
+    classDef start fill:#326ce5,stroke:#1e40af,color:#ffffff
+    classDef exit fill:transparent,stroke:#94a3b8,stroke-dasharray:4 4
+    class H1,H2 healthy
+    class D degraded
+    class U unhealthy
+    class zero,full,cond,some decision
+    class start start
+    class E0,E1 exit
+```
+
 Notes on these rules:
 
 - **Readiness and availability are different.** A Pod is *ready* when its
@@ -150,10 +179,37 @@ deploy/rbac.yaml       least-privilege namespaced Role + RoleBinding
 deploy/examples/       demo workloads for a disposable cluster
 ```
 
-```text
-main ──► kube.NewClient ──► kube.Inspect ──► health.ClassifyDeployment / health.DiagnosePod
-                                  │
-                                  └──► report.Write ──► stdout, exit code
+```mermaid
+flowchart TB
+    user(["Developer or CI job"])
+    kubeconfig[("kubeconfig")]
+
+    subgraph cli["kubestatus"]
+        direction LR
+        main["<b>cmd/kubestatus</b><br/>flags · exit code"]
+        kube["<b>internal/kube</b><br/>client-go · selectors"]
+        health["<b>internal/health</b><br/>classify · diagnose"]
+        report["<b>internal/report</b><br/>terminal tables"]
+        main --> kube --> health --> report
+    end
+
+    api[["kube-apiserver"]]
+    out(["Terminal report<br/>exit 0 · 1 · 2"])
+
+    user -- "kubestatus -n shop" --> cli
+    kubeconfig -. credentials .-> cli
+    cli -- "LIST deployments<br/>LIST pods" --> api
+    cli --> out
+
+    classDef pkg fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+    classDef ext fill:#f1f5f9,stroke:#64748b,color:#1e293b
+    classDef k8s fill:#326ce5,stroke:#1e40af,stroke-width:2px,color:#ffffff
+    classDef result fill:#dcfce7,stroke:#16a34a,color:#14532d
+    class main,kube,health,report pkg
+    class user,kubeconfig ext
+    class api k8s
+    class out result
+    style cli fill:transparent,stroke:#0284c7,stroke-dasharray:5 5
 ```
 
 Design decisions:
